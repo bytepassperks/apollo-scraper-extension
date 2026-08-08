@@ -6,16 +6,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "capture") {
     chrome.storage.local.set({ capture: message.capture });
     sendResponse({ ok: true });
+    return false;
   } else if (message.type === "run-status") {
     state = { ...state, ...message.status };
-    sendResponse?.({ ok: true });
+    sendResponse({ ok: true });
+    return false;
   } else if (message.type === "run-complete") {
     collected = message.records || [];
     state = { ...state, running: false, records: collected.length, result: true };
-    sendResponse?.({ ok: true });
-  } else if (message.type === "get-state") sendResponse({ state, fields: fieldDefinitions() });
-  else if (message.type === "get-results") sendResponse({ records: collected });
-  else if (message.type === "download") {
+    sendResponse({ ok: true });
+    return false;
+  } else if (message.type === "get-state") {
+    sendResponse({ state, fields: fieldDefinitions() });
+    return false;
+  } else if (message.type === "get-results") {
+    sendResponse({ records: collected });
+    return false;
+  } else if (message.type === "download") {
     ensureOffscreen().then(() => chrome.runtime.sendMessage({
       type: "offscreen-download",
       records: collected,
@@ -23,14 +30,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       fields: message.fields,
       allFields: message.allFields
     })).then(response => sendResponse(response || { ok: true })).catch(error => sendResponse({ ok: false, error: error.message }));
+    return true;
   }
-  return true;
+  return false;
 });
 chrome.runtime.onConnect.addListener(port => {
   port.onDisconnect.addListener(() => {});
 });
 
 async function ensureOffscreen() {
+  const offscreenUrl = chrome.runtime.getURL("offscreen.html");
+  if (chrome.runtime.getContexts) {
+    const contexts = await chrome.runtime.getContexts({
+      contextTypes: ["OFFSCREEN_DOCUMENT"],
+      documentUrls: [offscreenUrl]
+    });
+    if (contexts.length) return;
+  }
   try {
     await chrome.offscreen.createDocument({
       url: "offscreen.html",
@@ -38,6 +54,6 @@ async function ensureOffscreen() {
       justification: "Create a Blob URL that remains available while an export download completes."
     });
   } catch (error) {
-    if (!String(error.message).toLowerCase().includes("already exists")) throw error;
+    if (!/only a single offscreen document/i.test(String(error.message))) throw error;
   }
 }

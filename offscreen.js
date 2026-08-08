@@ -7,7 +7,7 @@ const revoke = downloadId => {
   clearTimeout(entry.timeout);
   URL.revokeObjectURL(entry.url);
   activeDownloads.delete(downloadId);
-  if (!activeDownloads.size) chrome.offscreen.closeDocument().catch(() => {});
+  if (!activeDownloads.size) window.close();
 };
 
 chrome.downloads.onChanged.addListener(delta => {
@@ -30,7 +30,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (chrome.runtime.lastError || downloadId === undefined) {
       URL.revokeObjectURL(url);
       sendResponse({ ok: false, error: chrome.runtime.lastError?.message || "Download could not be started." });
-      chrome.offscreen.closeDocument().catch(() => {});
+      window.close();
       return;
     }
     const timeout = setTimeout(() => revoke(downloadId), 10 * 60 * 1000);
