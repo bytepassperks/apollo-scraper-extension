@@ -1,0 +1,6 @@
+{
+  "name": "apollo-scraper-extension",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node --test" }
+}
