@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { flattenRecord, flattenAll } from "../lib/flatten.js";
 import { toCsv } from "../lib/csv.js";
-import { collectPages, extractRecords } from "../lib/pipeline.js";
+import { collectPages, extractRecords, requestError } from "../lib/pipeline.js";
 import { buildExportString } from "../lib/export.js";
 import { canDownload, progressText } from "../lib/popup-state.js";
 
@@ -28,6 +28,19 @@ test("record extraction uses the first non-empty collection and results fallback
   assert.deepEqual(extractRecords({ people: [], contacts: [{ id: "c1" }], organizations: [{ id: "o1" }] }), [{ id: "c1" }]);
   assert.deepEqual(extractRecords({ data: { people: [], accounts: [{ id: "a1" }] } }), [{ id: "a1" }]);
   assert.deepEqual(extractRecords({ people: [], results: [{ id: "r1" }] }), [{ id: "r1" }]);
+});
+
+test("non-2xx replay errors include response details and 422 caps after records", async () => {
+  assert.equal(requestError({ status: 422, body: { error: { message: "invalid search filter" } } }), "Apollo request failed (HTTP 422): invalid search filter.");
+  await assert.rejects(
+    () => collectPages({ requestBody: { page: 1 }, delayMs: 0, fetchPage: async () => ({ status: 422, body: { message: "bad request" } }) }),
+    /HTTP 422\): bad request\./
+  );
+  const records = await collectPages({
+    requestBody: { page: 1 }, delayMs: 0,
+    fetchPage: async body => body.page === 1 ? { status: 200, body: { people: [{ id: "1" }] } } : { status: 422, body: { message: "page cap" } }
+  });
+  assert.deepEqual(records.map(record => record.id), ["1"]);
 });
 
 test("export string and restored popup state are pure", () => {
