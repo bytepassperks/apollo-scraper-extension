@@ -47,7 +47,9 @@
     if (event.source !== window || event.data?.source !== "apollo-lead-exporter") return;
     if (event.data.type === "capture") {
       try {
-        capture = { ...event.data.capture, body: JSON.parse(event.data.capture.body) };
+        let body = event.data.capture.body;
+        try { body = JSON.parse(body); } catch {}
+        capture = { ...event.data.capture, body };
         safeSend({ type: "capture", capture });
       } catch {}
     }
@@ -106,7 +108,17 @@
           return Promise.reject(new Error(contextError));
         }
         console.debug("[Apollo Lead Exporter] replay", { url: capture.url, page, body });
-        return replay(body, `${Date.now()}-${page}`);
+        return replay(body, `${Date.now()}-${page}`).then(response => {
+          if (response.error || response.status < 200 || response.status >= 300) {
+            console.error("[Apollo Lead Exporter] replay failed", {
+              url: capture.url,
+              headers: Object.keys(capture.headers || {}),
+              body,
+              response: response.body || response.error
+            });
+          }
+          return response;
+        });
       },
       shouldStop: () => stopped,
       onProgress: progress => safeSend({ type: "run-status", status: { running: true, ...progress } })

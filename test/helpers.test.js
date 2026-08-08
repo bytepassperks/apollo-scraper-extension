@@ -43,6 +43,22 @@ test("non-2xx replay errors include response details and 422 caps after records"
   assert.deepEqual(records.map(record => record.id), ["1"]);
 });
 
+test("pagination never treats page-size fields as page cursors", async () => {
+  await assert.rejects(
+    () => collectPages({ requestBody: { per_page: 25 }, fetchPage: async () => ({ status: 200, body: { people: [] } }) }),
+    /Could not find a page field/
+  );
+  const bodies = [];
+  await collectPages({
+    requestBody: { options: { per_page: 25 }, page: 1 }, maxPages: 2, delayMs: 0,
+    fetchPage: async body => {
+      bodies.push(body);
+      return { status: 200, body: { people: [{ id: String(body.page) }] } };
+    }
+  });
+  assert.deepEqual(bodies.map(body => [body.page, body.options.per_page]), [[1, 25], [2, 25]]);
+});
+
 test("export string and restored popup state are pure", () => {
   assert.match(buildExportString([{ id: "c1", first_name: "Ada" }], { format: "json", fields: ["contact_id", "first_name"] }), /"contact_id": "c1"/);
   assert.equal(progressText({ running: true, pages: 2, records: 8 }), "Pages fetched: 2 · Records collected: 8");

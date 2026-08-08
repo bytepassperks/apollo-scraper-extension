@@ -55,9 +55,17 @@
   };
   const open = XMLHttpRequest.prototype.open;
   const send = XMLHttpRequest.prototype.send;
+  const setRequestHeader = XMLHttpRequest.prototype.setRequestHeader;
   XMLHttpRequest.prototype.open = function(method, url) {
-    this.__apolloRequest = { method: String(method).toUpperCase(), url: String(url) };
+    this.__apolloRequest = { method: String(method).toUpperCase(), url: String(url), headers: {} };
     return open.apply(this, arguments);
+  };
+  XMLHttpRequest.prototype.setRequestHeader = function(name, value) {
+    if (this.__apolloRequest) {
+      const existing = this.__apolloRequest.headers[name];
+      this.__apolloRequest.headers[name] = existing ? `${existing}, ${value}` : String(value);
+    }
+    return setRequestHeader.apply(this, arguments);
   };
   XMLHttpRequest.prototype.send = function(body) {
     const request = this.__apolloRequest;
@@ -65,7 +73,7 @@
       this.addEventListener("load", () => {
         try {
           const responseBody = JSON.parse(this.responseText);
-          if (typeof body === "string") remember({ ...request, headers: {}, body }, responseBody);
+          if (typeof body === "string") remember({ ...request, body }, responseBody);
         } catch {}
       });
     }
@@ -79,16 +87,21 @@
     }
     if (!active || event.data.type !== "replay") return;
     try {
+      const body = typeof event.data.body === "string" ? event.data.body : JSON.stringify(event.data.body);
+      const headers = { ...(event.data.headers || {}) };
+      if (!Object.keys(headers).some(key => key.toLowerCase() === "content-type") && typeof event.data.body !== "string") {
+        headers["Content-Type"] = "application/json";
+      }
       const response = await originalFetch(event.data.url, {
         method: "POST",
-        headers: event.data.headers || { "Content-Type": "application/json" },
-        body: JSON.stringify(event.data.body),
+        headers,
+        body,
         credentials: "include"
       });
       const text = await response.text();
-      let body;
-      try { body = JSON.parse(text); } catch { body = { raw: text }; }
-      window.postMessage({ source: "apollo-lead-exporter", type: "replay-result", runId: event.data.runId, status: response.status, body }, "*");
+      let responseBody;
+      try { responseBody = JSON.parse(text); } catch { responseBody = { raw: text }; }
+      window.postMessage({ source: "apollo-lead-exporter", type: "replay-result", runId: event.data.runId, status: response.status, body: responseBody }, "*");
     } catch (error) {
       window.postMessage({ source: "apollo-lead-exporter", type: "replay-result", runId: event.data.runId, error: error.message }, "*");
     }
