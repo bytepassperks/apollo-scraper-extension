@@ -1,41 +1,41 @@
 import { buildExportString } from "./lib/export.js";
 
-const activeDownloads = new Map();
-const revoke = downloadId => {
-  const entry = activeDownloads.get(downloadId);
-  if (!entry) return;
-  clearTimeout(entry.timeout);
-  URL.revokeObjectURL(entry.url);
-  activeDownloads.delete(downloadId);
-  if (!activeDownloads.size) window.close();
+const activeUrls = new Set();
+const revoke = blobUrl => {
+  if (!activeUrls.has(blobUrl)) return;
+  URL.revokeObjectURL(blobUrl);
+  activeUrls.delete(blobUrl);
+  if (!activeUrls.size) window.close();
 };
 
-chrome.downloads.onChanged.addListener(delta => {
-  if (!activeDownloads.has(delta.id)) return;
-  if (delta.state?.current === "complete" || delta.state?.current === "interrupted") revoke(delta.id);
-});
-
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type !== "offscreen-download") return;
+  if (message.type === "offscreen-revoke") {
+    revoke(message.blobUrl);
+    sendResponse({ ok: true });
+    return false;
+  }
+  if (message.type !== "offscreen-download") return false;
   const format = message.format === "json" ? "json" : "csv";
   const content = buildExportString(message.records || [], {
     format,
     fields: message.fields || [],
     allFields: Boolean(message.allFields)
   });
-  const blob = new Blob([content], { type: format === "json" ? "application/json" : "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
+  const blobUrl = URL.createObjectURL(new Blob([content], { type: format === "json" ? "application/json" : "text/csv;charset=utf-8" }));
   const filename = `apollo-leads-${Date.now()}.${format}`;
-  chrome.downloads.download({ url, filename, saveAs: true }, downloadId => {
-    if (chrome.runtime.lastError || downloadId === undefined) {
-      URL.revokeObjectURL(url);
-      sendResponse({ ok: false, error: chrome.runtime.lastError?.message || "Download could not be started." });
-      window.close();
-      return;
-    }
-    const timeout = setTimeout(() => revoke(downloadId), 10 * 60 * 1000);
-    activeDownloads.set(downloadId, { url, timeout });
-    sendResponse({ ok: true, downloadId });
-  });
+  activeUrls.add(blobUrl);
+  chrome.runtime.sendMessage({ type: "offscreen-ready", blobUrl, filename })
+    .then(response => {
+      if (!response?.ok) {
+        revoke(blobUrl);
+        sendResponse(response || { ok: false, error: "Download could not be started." });
+        return;
+      }
+      sendResponse(response);
+    })
+    .catch(error => {
+      revoke(blobUrl);
+      sendResponse({ ok: false, error: error.message });
+    });
   return true;
 });

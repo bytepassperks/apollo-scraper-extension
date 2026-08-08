@@ -2,6 +2,7 @@ import { fieldDefinitions } from "./lib/flatten.js";
 
 let state = { running: false, pages: 0, records: 0, error: "", result: null };
 let collected = [];
+const activeDownloads = new Map();
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "capture") {
     chrome.storage.local.set({ capture: message.capture });
@@ -31,12 +32,34 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       allFields: message.allFields
     })).then(response => sendResponse(response || { ok: true })).catch(error => sendResponse({ ok: false, error: error.message }));
     return true;
+  } else if (message.type === "offscreen-ready") {
+    chrome.downloads.download({ url: message.blobUrl, filename: message.filename, saveAs: true }, downloadId => {
+      if (chrome.runtime.lastError || downloadId === undefined) {
+        sendResponse({ ok: false, error: chrome.runtime.lastError?.message || "Download could not be started." });
+        return;
+      }
+      activeDownloads.set(downloadId, { blobUrl: message.blobUrl, timeout: setTimeout(() => finishDownload(downloadId), 10 * 60 * 1000) });
+      sendResponse({ ok: true, downloadId });
+    });
+    return true;
   }
   return false;
+});
+chrome.downloads.onChanged.addListener(delta => {
+  if (!activeDownloads.has(delta.id)) return;
+  if (delta.state?.current === "complete" || delta.state?.current === "interrupted") finishDownload(delta.id);
 });
 chrome.runtime.onConnect.addListener(port => {
   port.onDisconnect.addListener(() => {});
 });
+
+function finishDownload(downloadId) {
+  const entry = activeDownloads.get(downloadId);
+  if (!entry) return;
+  clearTimeout(entry.timeout);
+  activeDownloads.delete(downloadId);
+  chrome.runtime.sendMessage({ type: "offscreen-revoke", blobUrl: entry.blobUrl }).catch(() => {});
+}
 
 async function ensureOffscreen() {
   const offscreenUrl = chrome.runtime.getURL("offscreen.html");
