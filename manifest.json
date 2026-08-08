@@ -3,7 +3,7 @@
   "name": "Apollo Lead Exporter",
   "version": "1.0.0",
   "description": "Export people and company results visible in your Apollo.io session.",
-  "permissions": ["storage", "downloads", "scripting", "activeTab"],
+  "permissions": ["storage", "downloads", "scripting", "activeTab", "offscreen"],
   "host_permissions": ["https://app.apollo.io/*"],
   "background": { "service_worker": "background.js", "type": "module" },
   "action": {

@@ -1,5 +1,4 @@
 import { fieldDefinitions } from "./lib/flatten.js";
-import { buildExportString } from "./lib/export.js";
 import { canDownload, progressText } from "./lib/popup-state.js";
 const $ = id => document.getElementById(id);
 let tabId;
@@ -29,12 +28,8 @@ $("start").onclick = async () => { $("error").textContent = ""; const value = se
 $("stop").onclick = () => chrome.tabs.sendMessage(tabId, { type: "stop" });
 $("download").onclick = async () => {
   const value = settings();
-  const response = await chrome.runtime.sendMessage({ type: "get-results" });
-  const content = buildExportString(response.records || [], value);
-  const blob = new Blob([content], { type: value.format === "json" ? "application/json" : "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const filename = `apollo-leads-${Date.now()}.${value.format === "json" ? "json" : "csv"}`;
-  chrome.downloads.download({ url, filename, saveAs: true }, () => URL.revokeObjectURL(url));
+  const response = await chrome.runtime.sendMessage({ type: "download", format: value.format, fields: value.fields, allFields: value.allFields });
+  if (!response?.ok) $("error").textContent = response?.error || "Could not start download.";
 };
 $("all-fields").onchange = event => document.querySelectorAll("[data-key]").forEach(input => { input.checked = event.target.checked; });
 init();
