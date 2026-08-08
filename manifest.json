@@ -16,7 +16,7 @@
     "run_at": "document_start"
   }],
   "web_accessible_resources": [{
-    "resources": ["inject.js"],
+    "resources": ["inject.js", "lib/*"],
     "matches": ["https://app.apollo.io/*"]
   }]
 }
