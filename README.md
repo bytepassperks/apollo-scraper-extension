@@ -20,7 +20,7 @@ Apollo Lead Exporter is a no-build Chrome Manifest V3 extension that exports peo
 
 The page-context script observes same-origin POST requests under `/api/` whose JSON responses look like search results. It retains the latest request template, then replays that request in the page context so the browser's own cookies and session behavior are used. Page numbering is detected from the captured JSON body, records are deduplicated by ID, and pagination stops at the configured caps or an empty page.
 
-Replays preserve the captured URL verbatim, including its query string and any Apollo `cacheKey` parameter. This avoids changing the server's request identity while paginating. A true page cursor (`page`, `page_number`, or `pageNumber`) is required; page-size fields such as `per_page` and `page_size` are never incremented as cursors.
+Replays preserve the captured URL verbatim, including its query string. A captured body `cacheKey` is refreshed for each replay, while one-shot Cloudflare Turnstile headers are omitted. A true page cursor (`page`, `page_number`, or `pageNumber`) is required; page-size fields such as `per_page` and `page_size` are never incremented as cursors.
 
 The default fields follow the source actor's scraped-data table: contact identity and URLs, email and title details, organization details, employment history, location, engagement, departments, seniority, functions, phones, and intent fields. Nested values are represented as JSON strings in CSV. Missing or unknown values are blank. The source actor table's complete JSON structure is not available in the short README, so the **All fields** option also preserves unknown nested properties.
 

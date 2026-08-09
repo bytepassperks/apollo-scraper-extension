@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { flattenRecord, flattenAll } from "../lib/flatten.js";
 import { toCsv } from "../lib/csv.js";
-import { collectPages, extractRecords, requestError } from "../lib/pipeline.js";
+import { collectPages, extractRecords, refreshReplayBody, replayHeaders, requestError } from "../lib/pipeline.js";
 import { buildExportString } from "../lib/export.js";
 import { canDownload, progressText } from "../lib/popup-state.js";
 
@@ -57,6 +57,19 @@ test("pagination never treats page-size fields as page cursors", async () => {
     }
   });
   assert.deepEqual(bodies.map(body => [body.page, body.options.per_page]), [[1, 25], [2, 25]]);
+});
+
+test("replay drops one-shot headers and refreshes cache keys", () => {
+  assert.deepEqual(
+    replayHeaders({
+      "x-csrf-token": "csrf",
+      "x-cf-turnstile-response": "single-use",
+      "X-CF-Widget-Type": "managed"
+    }),
+    { "x-csrf-token": "csrf" }
+  );
+  assert.deepEqual(refreshReplayBody({ page: 2, cacheKey: 123 }, 456), { page: 2, cacheKey: 456 });
+  assert.deepEqual(refreshReplayBody({ page: 2 }, 456), { page: 2 });
 });
 
 test("export string and restored popup state are pure", () => {

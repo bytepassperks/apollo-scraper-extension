@@ -58,14 +58,14 @@
       pending.delete(event.data.runId);
     }
   });
-  const replay = (body, runId) => new Promise((resolve, reject) => {
+  const replay = (body, runId, headers) => new Promise((resolve, reject) => {
     if (!contextValid()) {
       notifyContextInvalid();
       reject(new Error(contextError));
       return;
     }
     pending.set(runId, resolve);
-    window.postMessage({ source: "apollo-lead-exporter", type: "replay", runId, url: capture.url, headers: capture.headers, body }, "*");
+    window.postMessage({ source: "apollo-lead-exporter", type: "replay", runId, url: capture.url, headers, body }, "*");
   });
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === "get-capture") {
@@ -96,7 +96,7 @@
       throw new Error(contextError);
     }
     if (!capture) throw new Error("Run a search on Apollo first.");
-    const { collectPages } = await pipelineReady;
+    const { collectPages, refreshReplayBody, replayHeaders } = await pipelineReady;
     const records = await collectPages({
       requestBody: capture.body,
       maxPages: Math.max(1, Number(settings.maxPages) || 100),
@@ -107,13 +107,14 @@
           notifyContextInvalid();
           return Promise.reject(new Error(contextError));
         }
-        console.debug("[Apollo Lead Exporter] replay", { url: capture.url, page, body });
-        return replay(body, `${Date.now()}-${page}`).then(response => {
+        const replayBody = refreshReplayBody(body);
+        console.debug("[Apollo Lead Exporter] replay", { url: capture.url, page, body: replayBody });
+        return replay(replayBody, `${Date.now()}-${page}`, replayHeaders(capture.headers)).then(response => {
           if (response.error || response.status < 200 || response.status >= 300) {
             console.error("[Apollo Lead Exporter] replay failed", {
               url: capture.url,
               headers: Object.keys(capture.headers || {}),
-              body,
+              body: replayBody,
               response: response.body || response.error
             });
           }
