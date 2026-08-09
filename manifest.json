@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "Apollo Lead Exporter",
+  "version": "1.0.0",
+  "description": "Export people and company results visible in your Apollo.io session.",
+  "permissions": ["storage", "downloads", "scripting", "activeTab", "offscreen"],
+  "host_permissions": ["https://app.apollo.io/*"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "action": {
+    "default_title": "Apollo Lead Exporter",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [{
+    "matches": ["https://app.apollo.io/*"],
+    "js": ["content.js"],
+    "run_at": "document_start"
+  }],
+  "web_accessible_resources": [{
+    "resources": ["inject.js", "lib/*"],
+    "matches": ["https://app.apollo.io/*"]
+  }]
+}
