@@ -107,6 +107,7 @@
     const delayMs = Math.max(0, Number(settings.delayMs) || 2500);
     const records = [];
     const seen = new Set();
+    safeSend({ type: "run-start" });
     const addRecords = current => {
       let added = 0;
       for (const record of current) {
@@ -119,12 +120,37 @@
       }
       return added;
     };
+    const domFallbackRecords = () => [...document.querySelectorAll('[role="row"], tr')]
+      .filter(row => row.querySelector('input[type="checkbox"], [aria-colindex="1"] a, [aria-colindex="1"]'))
+      .map(row => {
+        const nameNode = row.querySelector('[aria-colindex="1"] a, [aria-colindex="1"]');
+        const titleNode = row.querySelector('[aria-colindex="2"]');
+        const locationNode = row.querySelector('[aria-colindex="4"]');
+        const text = row.innerText || "";
+        const emails = text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) || [];
+        const name = nameNode?.innerText?.trim() || "";
+        const profileUrl = nameNode?.href || "";
+        return {
+          id: profileUrl || name || text,
+          full_name: name,
+          job_title: titleNode?.innerText?.trim() || "",
+          city: locationNode?.innerText?.trim() || "",
+          email: emails[0] || "",
+          linkedin_url: profileUrl
+        };
+      });
+    const recordsFrom = response => {
+      const current = extractRecords(response);
+      const hasCollection = ["people", "contacts", "accounts", "organizations", "results"].some(key => Array.isArray(response?.[key]) || Array.isArray(response?.data?.[key]));
+      return current.length || hasCollection ? current : domFallbackRecords();
+    };
     const initialError = latestResponse.status < 200 || latestResponse.status >= 300 || responseErrorMessage(latestResponse.response);
     if (initialError) throw new Error(requestError({ status: latestResponse.status, body: latestResponse.response }));
     let page = Number(capture.body?.page || capture.body?.page_number || capture.body?.pageNumber) || 1;
     let pages = 1;
-    addRecords(extractRecords(latestResponse.response));
-    safeSend({ type: "run-status", status: { running: true, page, pages, records: records.length } });
+    addRecords(recordsFrom(latestResponse.response));
+    const status = () => ({ running: true, page, pages, records: records.length });
+    safeSend({ type: "run-data", records, status: status() });
     const visibleControl = () => {
       const elements = [...document.querySelectorAll("button, a, [role='button']")].map(element => {
         const style = getComputedStyle(element);
@@ -154,8 +180,8 @@
       }
       page++;
       pages++;
-      const added = addRecords(extractRecords(response.response));
-      safeSend({ type: "run-status", status: { running: true, page, pages, records: records.length } });
+      const added = addRecords(recordsFrom(response.response));
+      safeSend({ type: "run-data", records, status: status() });
       if (!added) break;
       if (pages >= maxPages || records.length >= maxRecords) break;
       await new Promise(resolve => setTimeout(resolve, Math.max(0, delayMs + Math.floor(Math.random() * 501) - 250)));

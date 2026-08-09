@@ -22,6 +22,10 @@ The page-context script observes the search requests Apollo makes itself and ret
 
 Because Apollo can attach per-request anti-abuse challenges, the extension does not replay captured requests or reuse their headers.
 
+The interceptor's structured response is preferred because it preserves fields such as employment history. If a response does not contain a recognized record collection, the extension falls back to visible rows using semantic grid/table roles and `aria-colindex` values; this fallback is intentionally limited to rendered fields. Pagination is located through visible controls with accessible labels, titles, or text such as **Next** or **Next page**, not Apollo's generated CSS classes.
+
+The default delay is 2.5 seconds plus a small random jitter. The reference project [Apollo Free Email Scraper](https://github.com/tanmaytekale/apollo-scraper) recommends delays of 2–50 seconds and uses similar human-paced controls. This extension is an independent implementation; it does not click email/phone reveal controls and has no credit-spending mode. The reference project is MIT-licensed; its selectors and pacing guidance were consulted as reference, not copied.
+
 The default fields follow the source actor's scraped-data table: contact identity and URLs, email and title details, organization details, employment history, location, engagement, departments, seniority, functions, phones, and intent fields. Nested values are represented as JSON strings in CSV. Missing or unknown values are blank. The source actor table's complete JSON structure is not available in the short README, so the **All fields** option also preserves unknown nested properties.
 
 ## Limitations and responsible use

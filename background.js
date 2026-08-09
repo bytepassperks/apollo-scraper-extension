@@ -2,6 +2,10 @@ import { fieldDefinitions } from "./lib/flatten.js";
 
 let state = { running: false, pages: 0, records: 0, error: "", result: null };
 let collected = [];
+const stateReady = chrome.storage.local.get(["runState", "collectedRecords"]).then(saved => {
+  state = { ...state, ...(saved.runState || {}) };
+  collected = Array.isArray(saved.collectedRecords) ? saved.collectedRecords : [];
+});
 const activeDownloads = new Map();
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "capture") {
@@ -10,21 +14,35 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   } else if (message.type === "run-status") {
     state = { ...state, ...message.status };
+    persist();
+    sendResponse({ ok: true });
+    return false;
+  } else if (message.type === "run-start") {
+    collected = [];
+    state = { running: true, pages: 0, page: 1, records: 0, error: "", result: null };
+    persist();
+    sendResponse({ ok: true });
+    return false;
+  } else if (message.type === "run-data") {
+    collected = Array.isArray(message.records) ? message.records : collected;
+    state = { ...state, ...message.status, records: collected.length };
+    persist();
     sendResponse({ ok: true });
     return false;
   } else if (message.type === "run-complete") {
     collected = message.records || [];
     state = { ...state, running: false, records: collected.length, result: true };
+    persist();
     sendResponse({ ok: true });
     return false;
   } else if (message.type === "get-state") {
-    sendResponse({ state, fields: fieldDefinitions() });
-    return false;
+    stateReady.then(() => sendResponse({ state, fields: fieldDefinitions() }));
+    return true;
   } else if (message.type === "get-results") {
-    sendResponse({ records: collected });
-    return false;
+    stateReady.then(() => sendResponse({ records: collected }));
+    return true;
   } else if (message.type === "download") {
-    ensureOffscreen().then(() => chrome.runtime.sendMessage({
+    stateReady.then(() => ensureOffscreen()).then(() => chrome.runtime.sendMessage({
       type: "offscreen-download",
       records: collected,
       format: message.format,
@@ -52,6 +70,10 @@ chrome.downloads.onChanged.addListener(delta => {
 chrome.runtime.onConnect.addListener(port => {
   port.onDisconnect.addListener(() => {});
 });
+
+function persist() {
+  chrome.storage.local.set({ runState: state, collectedRecords: collected }).catch(error => console.error("[Apollo Lead Exporter] Could not persist run state", error));
+}
 
 function finishDownload(downloadId) {
   const entry = activeDownloads.get(downloadId);
