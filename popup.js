@@ -3,7 +3,7 @@ import { canDownload, progressText } from "./lib/popup-state.js";
 const $ = id => document.getElementById(id);
 let tabId;
 let definitions = [];
-const defaults = { maxRecords: 1000, maxPages: 100, delayMs: 1000, format: "csv", fields: [] };
+const defaults = { maxRecords: 1000, maxPages: 100, delayMs: 2500, format: "csv", fields: [] };
 const contextError = "Extension context expired. Reload the Apollo tab.";
 async function init() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -15,7 +15,7 @@ async function init() {
   $("all-fields").checked = settings.allFields || false;
   $("fields").innerHTML = definitions.map(field => `<label><input type="checkbox" data-key="${field.key}" ${!settings.fields.length || settings.fields.includes(field.key) ? "checked" : ""}> ${field.label}</label>`).join("");
   const capture = await chrome.tabs.sendMessage(tabId, { type: "get-capture" }).catch(error => ({ capture: null, contextInvalid: /context|receiving end|invalid/i.test(error.message || "") }));
-  $("capture-status").textContent = capture.contextInvalid ? contextError : capture.capture ? `Search captured: ${capture.resultCount || 0} results/page` : "Run a search on Apollo to arm the exporter.";
+  $("capture-status").textContent = capture.contextInvalid ? contextError : capture.capture ? `Search captured: ${capture.resultCount || 0} results/page. Start pages through the Apollo results UI.` : "Run a search on Apollo to arm the exporter.";
   const current = await chrome.runtime.sendMessage({ type: "get-state" });
   $("progress").textContent = progressText(current.state);
   $("download").disabled = !canDownload(current.state);

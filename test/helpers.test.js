@@ -2,9 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { flattenRecord, flattenAll } from "../lib/flatten.js";
 import { toCsv } from "../lib/csv.js";
-import { collectPages, extractRecords, refreshReplayBody, replayHeaders, requestError } from "../lib/pipeline.js";
+import { collectPages, extractRecords, requestError } from "../lib/pipeline.js";
 import { buildExportString } from "../lib/export.js";
 import { canDownload, progressText } from "../lib/popup-state.js";
+import { chooseNextControl, ResponseGate, shouldStopAfterResponse } from "../lib/ui-pagination.js";
 
 test("flatten maps contact and organization fields", () => {
   const result = flattenRecord({ id: "c1", first_name: "Ada", organization: { name: "Acme", website_url: "https://acme.test" }, employment_history: [{ current: true, organization_name: "Acme", job_title: "CTO" }] });
@@ -59,25 +60,31 @@ test("pagination never treats page-size fields as page cursors", async () => {
   assert.deepEqual(bodies.map(body => [body.page, body.options.per_page]), [[1, 25], [2, 25]]);
 });
 
-test("replay drops one-shot headers and refreshes cache keys", () => {
-  assert.deepEqual(
-    replayHeaders({
-      "x-csrf-token": "csrf",
-      "x-cf-turnstile-response": "single-use",
-      "X-CF-Widget-Type": "managed"
-    }),
-    { "x-csrf-token": "csrf" }
-  );
-  assert.deepEqual(refreshReplayBody({ page: 2, cacheKey: 123 }, 456), { page: 2, cacheKey: 456 });
-  assert.deepEqual(refreshReplayBody({ page: 2 }, 456), { page: 2 });
-});
-
 test("export string and restored popup state are pure", () => {
   assert.match(buildExportString([{ id: "c1", first_name: "Ada" }], { format: "json", fields: ["contact_id", "first_name"] }), /"contact_id": "c1"/);
-  assert.equal(progressText({ running: true, pages: 2, records: 8 }), "Pages fetched: 2 · Records collected: 8");
+  assert.equal(progressText({ running: true, page: 2, pages: 2, records: 8 }), "Page 2 · Pages fetched: 2 · Records collected: 8");
   assert.equal(progressText({ result: true, records: 8 }), "Complete · 8 records");
   assert.equal(canDownload({ records: 8 }), true);
   assert.equal(canDownload({ records: 0 }), false);
+});
+
+test("UI pagination chooses accessible next controls and stops at the last page", () => {
+  const disabled = { ariaLabel: "Next page", disabled: true, visible: true };
+  const next = { ariaLabel: "Next page", disabled: false, visible: true };
+  assert.equal(chooseNextControl([disabled, next]), next);
+  assert.equal(shouldStopAfterResponse({ control: null, newRecords: 2, page: 1, maxPages: 5, maxRecords: 10, records: 2 }), true);
+  assert.equal(shouldStopAfterResponse({ control: next, newRecords: 0, page: 2, maxPages: 5, maxRecords: 10, records: 2 }), true);
+  assert.equal(shouldStopAfterResponse({ control: next, newRecords: 2, page: 2, maxPages: 5, maxRecords: 10, records: 4, error: true }), true);
+});
+
+test("UI response gate handles click-response ordering and timeout", async () => {
+  const gate = new ResponseGate();
+  const response = gate.waitForNext(3, 50);
+  gate.push({ status: 200 }, 3);
+  let settled = false;
+  setTimeout(() => gate.push({ status: 200, body: "next" }, 4), 0);
+  assert.deepEqual(await response, { status: 200, body: "next" });
+  await assert.rejects(() => new ResponseGate().waitForNext(1, 5), /Timed out waiting/);
 });
 
 test("fixture pagination replays pages, dedupes ids, and stops on empty page", async () => {

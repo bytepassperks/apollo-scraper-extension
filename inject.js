@@ -32,11 +32,22 @@
   const hasRecords = body => {
     if (!body || typeof body !== "object") return false;
     const hasCollection = searchKeys.some(key => Array.isArray(body[key]) || Array.isArray(body.data?.[key]));
-    return hasCollection && Boolean(body.pagination || body.page || body.meta?.pagination);
+    return hasCollection || Array.isArray(body.results);
+  };
+  const hasSearchError = body => Boolean(body && typeof body === "object" && (body.error || body.errors || body.message));
+  const isFinderRequest = request => {
+    try {
+      const pathname = new URL(request.url, location.href).pathname;
+      if (/\/(?:mixed_)?(?:people|companies)\/search/.test(pathname)) return true;
+      const body = JSON.parse(request.body || "{}");
+      return Object.prototype.hasOwnProperty.call(body, "page") || Object.prototype.hasOwnProperty.call(body, "per_page") || Object.prototype.hasOwnProperty.call(body, "fields");
+    } catch { return false; }
   };
   const remember = (request, response) => {
-    if (!active || !hasRecords(response)) return;
-    window.postMessage({ source: "apollo-lead-exporter", type: "capture", capture: { ...request, response } }, "*");
+    if (!active || (!hasRecords(response) && (!hasSearchError(response) || !isFinderRequest(request)))) return;
+    const capture = { ...request, response };
+    window.postMessage({ source: "apollo-lead-exporter", type: "search-response", capture }, "*");
+    if (hasRecords(response)) window.postMessage({ source: "apollo-lead-exporter", type: "capture", capture }, "*");
   };
   window.fetch = function(input, init) {
     if (!active) return originalFetch.apply(this, arguments);
@@ -48,7 +59,7 @@
     return responsePromise.then(response => bodyPromise.then(bodyText => {
       if (!bodyText) return response;
       return response.clone().json().then(responseBody => {
-        remember({ url: info.url, method: info.method, headers: headersFor(input, init), body: bodyText }, responseBody);
+        remember({ url: info.url, method: info.method, headers: headersFor(input, init), body: bodyText, status: response.status }, responseBody);
         return response;
       }).catch(() => response);
     }).catch(() => response));
@@ -73,37 +84,17 @@
       this.addEventListener("load", () => {
         try {
           const responseBody = JSON.parse(this.responseText);
-          if (typeof body === "string") remember({ ...request, body }, responseBody);
+            if (typeof body === "string") remember({ ...request, body, status: this.status }, responseBody);
         } catch {}
       });
     }
     return send.apply(this, arguments);
   };
-  window.addEventListener("message", async event => {
+  window.addEventListener("message", event => {
     if (event.source !== window || event.data?.source !== "apollo-lead-exporter") return;
     if (event.data.type === "context-invalid") {
       active = false;
       return;
-    }
-    if (!active || event.data.type !== "replay") return;
-    try {
-      const body = typeof event.data.body === "string" ? event.data.body : JSON.stringify(event.data.body);
-      const headers = { ...(event.data.headers || {}) };
-      if (!Object.keys(headers).some(key => key.toLowerCase() === "content-type") && typeof event.data.body !== "string") {
-        headers["Content-Type"] = "application/json";
-      }
-      const response = await originalFetch(event.data.url, {
-        method: "POST",
-        headers,
-        body,
-        credentials: "include"
-      });
-      const text = await response.text();
-      let responseBody;
-      try { responseBody = JSON.parse(text); } catch { responseBody = { raw: text }; }
-      window.postMessage({ source: "apollo-lead-exporter", type: "replay-result", runId: event.data.runId, status: response.status, body: responseBody }, "*");
-    } catch (error) {
-      window.postMessage({ source: "apollo-lead-exporter", type: "replay-result", runId: event.data.runId, error: error.message }, "*");
     }
   });
 })();

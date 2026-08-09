@@ -3,9 +3,10 @@
 <body><main>
   <h1>Apollo Lead Exporter</h1>
   <p id="capture-status">Run a search on Apollo to arm the exporter.</p>
+  <p>Start advances through Apollo's own results pages. Stop halts the run.</p>
   <label>Max records <input id="max-records" type="number" min="1" value="1000"></label>
   <label>Max pages <input id="max-pages" type="number" min="1" value="100"></label>
-  <label>Delay (ms) <input id="delay-ms" type="number" min="0" value="1000"></label>
+  <label>Delay (ms) <input id="delay-ms" type="number" min="0" value="2500"></label>
   <label>Output format <select id="format"><option value="csv">CSV</option><option value="json">JSON</option></select></label>
   <fieldset><legend>Fields</legend><div id="fields"></div><label><input id="all-fields" type="checkbox"> All fields (including unknown nested fields)</label></fieldset>
   <div class="buttons"><button id="start">Start</button><button id="stop">Stop</button><button id="download" disabled>Download</button></div>

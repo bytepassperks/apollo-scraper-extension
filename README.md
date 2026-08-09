@@ -11,16 +11,16 @@ Apollo Lead Exporter is a no-build Chrome Manifest V3 extension that exports peo
 ## Usage
 
 1. Log in to Apollo.io and open a people or company search.
-2. Run the search and leave the results page open. The extension observes the search request and arms itself; it does not contain hardcoded Apollo API paths.
+2. Run the search and leave the results page open. The extension observes Apollo's own search response and arms itself; it does not issue a search request of its own.
 3. Open **Apollo Lead Exporter** from the toolbar.
 4. Choose maximum records, maximum pages, delay, output format, and fields.
-5. Select **Start**, then **Download** after the run completes. The popup may close while a run continues.
+5. Select **Start** to click through Apollo's visible results-page controls. Select **Stop** to halt. Select **Download** after the run completes. The popup may close while a run continues.
 
 ## How it works
 
-The page-context script observes same-origin POST requests under `/api/` whose JSON responses look like search results. It retains the latest request template, then replays that request in the page context so the browser's own cookies and session behavior are used. Page numbering is detected from the captured JSON body, records are deduplicated by ID, and pagination stops at the configured caps or an empty page.
+The page-context script observes the search requests Apollo makes itself and retains the latest search response. During an export, the content script finds Apollo's visible next-page control using accessible labels, titles, and visible text, clicks it, and waits for the next intercepted search response. The extension never issues a search request in the default export flow. Records are deduplicated by ID, and pagination stops at the configured caps, a disabled or absent next control, an empty page, a timeout, or an Apollo error response.
 
-Replays preserve the captured URL verbatim, including its query string. A captured body `cacheKey` is refreshed for each replay, while one-shot Cloudflare Turnstile headers are omitted. A true page cursor (`page`, `page_number`, or `pageNumber`) is required; page-size fields such as `per_page` and `page_size` are never incremented as cursors.
+Because Apollo can attach per-request anti-abuse challenges, the extension does not replay captured requests or reuse their headers.
 
 The default fields follow the source actor's scraped-data table: contact identity and URLs, email and title details, organization details, employment history, location, engagement, departments, seniority, functions, phones, and intent fields. Nested values are represented as JSON strings in CSV. Missing or unknown values are blank. The source actor table's complete JSON structure is not available in the short README, so the **All fields** option also preserves unknown nested properties.
 
