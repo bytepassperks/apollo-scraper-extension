@@ -80,13 +80,19 @@
       run(message.settings)
         .then(result => sendResponse({ ok: true, ...result }))
         .catch(error => {
-          safeSend({ type: "run-status", status: { running: false, error: error.message } });
-          sendResponse({ ok: false, error: error.message });
+          if (stopped) {
+            safeSend({ type: "run-status", status: { running: false, stopped: true } });
+            sendResponse({ ok: true, stopped: true });
+          } else {
+            safeSend({ type: "run-status", status: { running: false, error: error.message } });
+            sendResponse({ ok: false, error: error.message });
+          }
         });
       return true;
     }
     if (message.type === "stop") {
       stopped = true;
+      responseGate?.cancel();
       safeSend({ type: "run-status", status: { running: false, stopped: true } });
       sendResponse({ ok: true });
       return false;
@@ -99,7 +105,7 @@
       throw new Error(contextError);
     }
     if (!capture) throw new Error("Run a search on Apollo first.");
-    const [{ extractRecords, requestError, responseErrorMessage }, { chooseNextControl, ResponseGate }] = await pipelineReady;
+    const [{ extractRecords, requestError, responseErrorMessage }, { chooseNextControl, stableDomIdentity, ResponseGate }] = await pipelineReady;
     if (!responseGate) responseGate = new ResponseGate();
     if (!latestResponse) throw new Error("Run a search on Apollo first.");
     const maxPages = Math.max(1, Number(settings.maxPages) || 100);
@@ -107,7 +113,7 @@
     const delayMs = Math.max(0, Number(settings.delayMs) || 2500);
     const records = [];
     const seen = new Set();
-    safeSend({ type: "run-start" });
+    await safeSend({ type: "run-start" });
     const addRecords = current => {
       let added = 0;
       for (const record of current) {
@@ -125,14 +131,19 @@
       .map(row => {
         const nameNode = row.querySelector('[aria-colindex="1"] a, [aria-colindex="1"]');
         const titleNode = row.querySelector('[aria-colindex="2"]');
+        const companyNode = row.querySelector('[aria-colindex="3"]');
         const locationNode = row.querySelector('[aria-colindex="4"]');
         const text = row.innerText || "";
         const emails = text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) || [];
         const name = nameNode?.innerText?.trim() || "";
         const profileUrl = nameNode?.href || "";
+        const company = companyNode?.innerText?.trim() || "";
+        const id = stableDomIdentity({ profileUrl, name, company });
+        if (!id) return null;
         return {
-          id: profileUrl || name || text,
+          id,
           full_name: name,
+          organization_name: company,
           job_title: titleNode?.innerText?.trim() || "",
           city: locationNode?.innerText?.trim() || "",
           email: emails[0] || "",
@@ -185,6 +196,10 @@
       if (!added) break;
       if (pages >= maxPages || records.length >= maxRecords) break;
       await new Promise(resolve => setTimeout(resolve, Math.max(0, delayMs + Math.floor(Math.random() * 501) - 250)));
+    }
+    if (stopped) {
+      safeSend({ type: "run-status", status: { running: false, stopped: true, records: records.length } });
+      return { records: records.length, stopped: true };
     }
     safeSend({ type: "run-complete", records, format: settings.format, fields: settings.fields });
     return { records: records.length };

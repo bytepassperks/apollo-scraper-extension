@@ -5,7 +5,7 @@ import { toCsv } from "../lib/csv.js";
 import { collectPages, extractRecords, requestError } from "../lib/pipeline.js";
 import { buildExportString } from "../lib/export.js";
 import { canDownload, progressText } from "../lib/popup-state.js";
-import { chooseNextControl, ResponseGate, shouldStopAfterResponse } from "../lib/ui-pagination.js";
+import { chooseNextControl, ResponseGate, shouldStopAfterResponse, stableDomIdentity } from "../lib/ui-pagination.js";
 
 test("flatten maps contact and organization fields", () => {
   const result = flattenRecord({ id: "c1", first_name: "Ada", organization: { name: "Acme", website_url: "https://acme.test" }, employment_history: [{ current: true, organization_name: "Acme", job_title: "CTO" }] });
@@ -85,6 +85,16 @@ test("UI response gate handles click-response ordering and timeout", async () =>
   setTimeout(() => gate.push({ status: 200, body: "next" }, 4), 0);
   assert.deepEqual(await response, { status: 200, body: "next" });
   await assert.rejects(() => new ResponseGate().waitForNext(1, 5), /Timed out waiting/);
+});
+
+test("stopping a UI wait cancels without turning into a timeout failure", async () => {
+  const gate = new ResponseGate();
+  const waiting = gate.waitForNext(1, 20000);
+  gate.cancel();
+  assert.deepEqual(await waiting, { cancelled: true });
+  assert.equal(stableDomIdentity({ profileUrl: "https://app.apollo.io/person/1", name: "Ada", company: "Acme" }), "https://app.apollo.io/person/1");
+  assert.equal(stableDomIdentity({ name: "Ada", company: "Acme" }), "Ada|Acme");
+  assert.equal(stableDomIdentity({ name: "", company: "" }), "");
 });
 
 test("fixture pagination replays pages, dedupes ids, and stops on empty page", async () => {
