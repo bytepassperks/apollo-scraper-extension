@@ -8,13 +8,15 @@ const contextError = "Extension context expired. Reload the Apollo tab.";
 async function init() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   tabId = tab?.id;
-  definitions = fieldDefinitions().map(([label, key]) => ({ label, key }));
   const settings = { ...defaults, ...(await chrome.storage.local.get(defaults)) };
   for (const id of ["max-records", "max-pages", "delay-ms"]) $(id).value = settings[id.replaceAll("-", "")] ?? settings[{ "max-records": "maxRecords", "max-pages": "maxPages", "delay-ms": "delayMs" }[id]];
   $("format").value = settings.format;
   $("all-fields").checked = settings.allFields || false;
-  $("fields").innerHTML = definitions.map(field => `<label><input type="checkbox" data-key="${field.key}" ${!settings.fields.length || settings.fields.includes(field.key) ? "checked" : ""}> ${field.label}</label>`).join("");
   const capture = await chrome.tabs.sendMessage(tabId, { type: "get-capture" }).catch(error => ({ capture: null, contextInvalid: /context|receiving end|invalid/i.test(error.message || "") }));
+  definitions = fieldDefinitions(capture.entityKind || "people").map(([label, key]) => ({ label, key }));
+  const validFields = new Set(definitions.map(field => field.key));
+  const selectedFields = settings.fields.filter(key => validFields.has(key));
+  $("fields").innerHTML = definitions.map(field => `<label><input type="checkbox" data-key="${field.key}" ${!selectedFields.length || selectedFields.includes(field.key) ? "checked" : ""}> ${field.label}</label>`).join("");
   $("capture-status").textContent = capture.contextInvalid ? contextError : capture.capture ? `Search captured: ${capture.resultCount || 0} results/page. Start pages through the Apollo results UI.` : "Run a search on Apollo to arm the exporter.";
   const current = await chrome.runtime.sendMessage({ type: "get-state" });
   $("progress").textContent = progressText(current.state);

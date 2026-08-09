@@ -19,7 +19,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const content = buildExportString(message.records || [], {
     format,
     fields: message.fields || [],
-    allFields: Boolean(message.allFields)
+    allFields: Boolean(message.allFields),
+    entityKind: message.entityKind || "people"
   });
   const blobUrl = URL.createObjectURL(new Blob([content], { type: format === "json" ? "application/json" : "text/csv;charset=utf-8" }));
   const filename = `apollo-leads-${Date.now()}.${format}`;

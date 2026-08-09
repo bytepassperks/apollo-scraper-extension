@@ -46,16 +46,27 @@
   let responseSequence = 0;
   let responseGate = null;
   let stopped = false;
-  pipelineReady.then(([, { ResponseGate }]) => { responseGate = new ResponseGate(); });
+  pipelineReady.then(([, { ResponseGate }]) => { responseGate = new ResponseGate(); }).catch(() => {});
   const parseCapture = data => {
     let body = data.body;
     try { body = JSON.parse(body); } catch {}
     return { ...data, body };
   };
+  const captureKind = data => /mixed_compan|\/companies\b|\/accounts\b|\/organizations\b/i.test(data?.url || "") ? "companies" : "people";
+  const errorText = error => {
+    if (error instanceof Error && error.message) return error.message;
+    if (typeof error === "string" && error) return error;
+    try {
+      const serialized = JSON.stringify(error);
+      return serialized && serialized !== "{}" ? serialized : "Apollo export failed.";
+    } catch {
+      return "Apollo export failed.";
+    }
+  };
   window.addEventListener("message", event => {
     if (event.source !== window || event.data?.source !== "apollo-lead-exporter") return;
     if (event.data.type === "search-response") {
-      latestResponse = parseCapture(event.data.capture);
+      latestResponse = { ...parseCapture(event.data.capture), entityKind: captureKind(event.data.capture) };
       responseSequence++;
       responseGate?.push(latestResponse, responseSequence);
       const hasRecords = Array.isArray(latestResponse.response?.people) || Array.isArray(latestResponse.response?.contacts) || Array.isArray(latestResponse.response?.accounts) || Array.isArray(latestResponse.response?.organizations) || Array.isArray(latestResponse.response?.results);
@@ -64,7 +75,7 @@
         safeSend({ type: "capture", capture });
       }
     } else if (event.data.type === "capture" && !latestResponse) {
-      capture = parseCapture(event.data.capture);
+      capture = { ...parseCapture(event.data.capture), entityKind: captureKind(event.data.capture) };
       latestResponse = capture;
       responseSequence++;
       safeSend({ type: "capture", capture });
@@ -72,7 +83,7 @@
   });
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === "get-capture") {
-      sendResponse(capture ? { capture: { url: capture.url, method: capture.method, headers: capture.headers, body: capture.body }, resultCount: (capture.response?.people || capture.response?.contacts || []).length } : { capture: null });
+      sendResponse(capture ? { capture: { url: capture.url, method: capture.method, headers: capture.headers, body: capture.body, entityKind: capture.entityKind }, entityKind: capture.entityKind, resultCount: (capture.response?.people || capture.response?.contacts || capture.response?.accounts || capture.response?.organizations || []).length } : { capture: null });
       return false;
     }
     if (message.type === "run") {
@@ -84,8 +95,9 @@
             safeSend({ type: "run-status", status: { running: false, stopped: true } });
             sendResponse({ ok: true, stopped: true });
           } else {
-            safeSend({ type: "run-status", status: { running: false, error: error.message } });
-            sendResponse({ ok: false, error: error.message });
+            const message = errorText(error);
+            safeSend({ type: "run-status", status: { running: false, error: message } });
+            sendResponse({ ok: false, error: message });
           }
         });
       return true;
@@ -104,10 +116,13 @@
       notifyContextInvalid();
       throw new Error(contextError);
     }
-    if (!capture) throw new Error("Run a search on Apollo first.");
-    const [{ extractRecords, requestError, responseErrorMessage }, { chooseNextControl, stableDomIdentity, ResponseGate }] = await pipelineReady;
+    const [{ extractRecords, hasEntityCollection, inferEntityKind, requestError, responseErrorMessage }, { chooseNextControl, stableDomIdentity, ResponseGate }] = await pipelineReady;
     if (!responseGate) responseGate = new ResponseGate();
     if (!latestResponse) throw new Error("Run a search on Apollo first.");
+    const entityKind = inferEntityKind(capture || latestResponse, location.href);
+    const initialError = latestResponse.status < 200 || latestResponse.status >= 300 || responseErrorMessage(latestResponse.response);
+    if (initialError) throw new Error(requestError({ status: latestResponse.status, body: latestResponse.response }));
+    if (!capture) throw new Error("Run a search on Apollo first.");
     const maxPages = Math.max(1, Number(settings.maxPages) || 100);
     const maxRecords = Math.max(1, Number(settings.maxRecords) || 1000);
     const delayMs = Math.max(0, Number(settings.delayMs) || 2500);
@@ -151,17 +166,14 @@
         };
       });
     const recordsFrom = response => {
-      const current = extractRecords(response);
-      const hasCollection = ["people", "contacts", "accounts", "organizations", "results"].some(key => Array.isArray(response?.[key]) || Array.isArray(response?.data?.[key]));
-      return current.length || hasCollection ? current : domFallbackRecords();
+      const current = extractRecords(response, entityKind);
+      return current.length || hasEntityCollection(response, entityKind) ? current : domFallbackRecords();
     };
-    const initialError = latestResponse.status < 200 || latestResponse.status >= 300 || responseErrorMessage(latestResponse.response);
-    if (initialError) throw new Error(requestError({ status: latestResponse.status, body: latestResponse.response }));
     let page = Number(capture.body?.page || capture.body?.page_number || capture.body?.pageNumber) || 1;
     let pages = 1;
     addRecords(recordsFrom(latestResponse.response));
     const status = () => ({ running: true, page, pages, records: records.length });
-    safeSend({ type: "run-data", records, status: status() });
+    safeSend({ type: "run-data", records, status: { ...status(), entityKind } });
     const visibleControl = () => {
       const elements = [...document.querySelectorAll("button, a, [role='button']")].map(element => {
         const style = getComputedStyle(element);
@@ -192,7 +204,7 @@
       page++;
       pages++;
       const added = addRecords(recordsFrom(response.response));
-      safeSend({ type: "run-data", records, status: status() });
+      safeSend({ type: "run-data", records, status: { ...status(), entityKind } });
       if (!added) break;
       if (pages >= maxPages || records.length >= maxRecords) break;
       await new Promise(resolve => setTimeout(resolve, Math.max(0, delayMs + Math.floor(Math.random() * 501) - 250)));
@@ -201,7 +213,7 @@
       safeSend({ type: "run-status", status: { running: false, stopped: true, records: records.length } });
       return { records: records.length, stopped: true };
     }
-    safeSend({ type: "run-complete", records, format: settings.format, fields: settings.fields });
+    safeSend({ type: "run-complete", records, format: settings.format, fields: settings.fields, entityKind });
     return { records: records.length };
   }
 })();

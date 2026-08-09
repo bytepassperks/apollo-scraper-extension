@@ -34,7 +34,7 @@
     const hasCollection = searchKeys.some(key => Array.isArray(body[key]) || Array.isArray(body.data?.[key]));
     return hasCollection || Array.isArray(body.results);
   };
-  const hasSearchError = body => Boolean(body && typeof body === "object" && (body.error || body.errors || body.message));
+  const hasSearchError = body => Boolean(body && typeof body === "object" && (body.error || body.errors || body.message || body.code));
   const isFinderRequest = request => {
     try {
       const pathname = new URL(request.url, location.href).pathname;

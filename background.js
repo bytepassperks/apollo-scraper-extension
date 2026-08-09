@@ -31,12 +31,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   } else if (message.type === "run-complete") {
     collected = message.records || [];
-    state = { ...state, running: false, records: collected.length, result: true };
+    state = { ...state, running: false, records: collected.length, result: true, entityKind: message.entityKind || state.entityKind || "people" };
     persist();
     sendResponse({ ok: true });
     return false;
   } else if (message.type === "get-state") {
-    stateReady.then(() => sendResponse({ state, fields: fieldDefinitions() }));
+    stateReady.then(() => sendResponse({ state, fields: fieldDefinitions(state.entityKind) }));
     return true;
   } else if (message.type === "get-results") {
     stateReady.then(() => sendResponse({ records: collected }));
@@ -47,7 +47,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       records: collected,
       format: message.format,
       fields: message.fields,
-      allFields: message.allFields
+      allFields: message.allFields,
+      entityKind: state.entityKind || "people"
     })).then(response => sendResponse(response || { ok: true })).catch(error => sendResponse({ ok: false, error: error.message }));
     return true;
   } else if (message.type === "offscreen-ready") {

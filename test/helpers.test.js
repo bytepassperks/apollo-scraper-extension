@@ -25,14 +25,16 @@ test("CSV uses BOM, RFC4180 escaping and selected fields", () => {
   assert.equal(csv, '\ufeffName,Email\r\n"A ""quoted""",a@example.test\r\n');
 });
 
-test("record extraction uses the first non-empty collection and results fallback", () => {
+test("record extraction stays within the expected entity kind", () => {
   assert.deepEqual(extractRecords({ people: [], contacts: [{ id: "c1" }], organizations: [{ id: "o1" }] }), [{ id: "c1" }]);
-  assert.deepEqual(extractRecords({ data: { people: [], accounts: [{ id: "a1" }] } }), [{ id: "a1" }]);
-  assert.deepEqual(extractRecords({ people: [], results: [{ id: "r1" }] }), [{ id: "r1" }]);
+  assert.deepEqual(extractRecords({ people: [], contacts: [], accounts: [{ id: "a1" }] }, "people"), []);
+  assert.deepEqual(extractRecords({ data: { accounts: [{ id: "a1" }] } }, "companies"), [{ id: "a1" }]);
+  assert.deepEqual(extractRecords({ people: [], results: [{ id: "r1" }] }, "people"), []);
 });
 
 test("non-2xx replay errors include response details and 422 caps after records", async () => {
   assert.equal(requestError({ status: 422, body: { error: { message: "invalid search filter" } } }), "Apollo request failed (HTTP 422): invalid search filter.");
+  assert.equal(requestError({ status: 422, body: { code: "upgrade_plan" } }), "Apollo request failed (HTTP 422): Apollo search limit reached for this plan — the run stopped.");
   await assert.rejects(
     () => collectPages({ requestBody: { page: 1 }, delayMs: 0, fetchPage: async () => ({ status: 422, body: { message: "bad request" } }) }),
     /HTTP 422\): bad request\./
@@ -66,6 +68,7 @@ test("export string and restored popup state are pure", () => {
   assert.equal(progressText({ result: true, records: 8 }), "Complete · 8 records");
   assert.equal(canDownload({ records: 8 }), true);
   assert.equal(canDownload({ records: 0 }), false);
+  assert.match(buildExportString([{ id: "a1", name: "Acme", linkedin_url: "https://linkedin.com/company/acme" }], { entityKind: "companies", fields: ["account_id", "name", "linkedin_url"] }), /Account ID,Company Name,LinkedIn URL/);
 });
 
 test("UI pagination chooses accessible next controls and stops at the last page", () => {
